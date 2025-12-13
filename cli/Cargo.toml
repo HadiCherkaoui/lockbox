@@ -8,3 +8,5 @@ lockbox-crypto = { path = "../crates/lockbox-crypto" }
 lockbox-proto  = { path = "../crates/lockbox-proto" }
 lockbox-auth   = { path = "../crates/lockbox-auth" }
 lockbox-store  = { path = "../crates/lockbox-store" }
+clap = { version = "4.5.53", features = ["derive"] }
+rpassword = "7.4.0"

@@ -9,4 +9,5 @@ aes-gcm = "0.10.3"
 base64 = "0.22.1"
 ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 rand = "0.8.5"
+serde = { version = "1.0.228", features = ["derive"] }
 zeroize = "1.8.2"

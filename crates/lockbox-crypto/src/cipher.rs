@@ -2,6 +2,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
 };
+use ed25519_dalek::SigningKey;
 use rand::RngCore;
 use zeroize::Zeroizing;
 
@@ -10,15 +11,16 @@ use zeroize::Zeroizing;
 pub struct SymmetricKey(Zeroizing<[u8; 32]>);
 
 impl SymmetricKey {
-    /// Generate a new random 256-bit key
-    pub fn generate() -> Self {
-        let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        SymmetricKey(Zeroizing::new(key))
+    /// Derive a 256-bit key from Ed25519 signing key
+    pub fn from_ed25519(signing_key: &SigningKey) -> Self {
+        // Use the signing key bytes as source material
+        let key_bytes = signing_key.to_bytes();
+        SymmetricKey(Zeroizing::new(key_bytes))
     }
 }
 
 /// Holds encrypted data: a 12-byte nonce + the ciphertext (which includes the GCM auth tag)
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Ciphertext {
     pub nonce: [u8; 12],
     pub data: Vec<u8>,

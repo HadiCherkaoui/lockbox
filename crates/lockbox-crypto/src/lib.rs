@@ -8,8 +8,8 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt() {
-        // Generate a random key
-        let key = SymmetricKey::generate();
+        let keypair = generate_keypair();
+        let key = SymmetricKey::from_ed25519(&keypair);
 
         // Our secret password
         let password = b"my super secret password";
@@ -51,5 +51,18 @@ mod tests {
             b"different message",
             &signature
         ));
+    }
+
+    #[test]
+    fn test_signing_key_save_load() {
+        let signing_key = generate_keypair();
+        let filepath = "./test_signing_key.bin";
+
+        save_signing_key(&signing_key, filepath).expect("should save signing key");
+
+        let loaded_key = load_signing_key(filepath).expect("should load signing key");
+
+        std::fs::remove_file(filepath).expect("should remove test file");
+        assert_eq!(signing_key.to_bytes(), loaded_key.to_bytes());
     }
 }
