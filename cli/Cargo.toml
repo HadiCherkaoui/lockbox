@@ -1,0 +1,10 @@
+[package]
+name = "lbx"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lockbox-crypto = { path = "../crates/lockbox-crypto" }
+lockbox-proto  = { path = "../crates/lockbox-proto" }
+lockbox-auth   = { path = "../crates/lockbox-auth" }
+lockbox-store  = { path = "../crates/lockbox-store" }
