@@ -5,6 +5,7 @@ use lockbox_crypto::{
 };
 use lockbox_store::passwords::PasswordStore;
 use rpassword::read_password;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{
     fs::create_dir_all,
@@ -93,46 +94,135 @@ pub fn handle_init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn handle_add(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn handle_set(name: &str, pairs: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::new()?;
     let mut password_store = load_lockbox()?;
+
     if password_store.entry_exists(name) {
-        return Err(format!("Entry '{}' already exists", name).into());
+        return Err(format!("Secret '{}' already exists. Use 'update' to modify it.", name).into());
     }
-    let mut stdout = stdout();
-    print!("Username: ");
-    stdout.flush()?;
-    let mut username = String::new();
-    stdin().read_line(&mut username)?;
-    let username = username.trim().to_string();
-    if username.is_empty() {
-        return Err("Username cannot be empty".into());
+
+    // Parse KEY=VALUE pairs
+    let mut data = HashMap::new();
+    for pair in pairs {
+        let parts: Vec<&str> = pair.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid format '{}'. Use KEY=VALUE", pair).into());
+        }
+        let key = parts[0].trim();
+        let value = parts[1].trim();
+
+        if key.is_empty() || value.is_empty() {
+            return Err(format!("Key or value cannot be empty in '{}'", pair).into());
+        }
+
+        data.insert(key.to_string(), value.to_string());
     }
-    print!("Password: ");
-    stdout.flush()?;
-    let password = read_password()?;
-    if password.is_empty() {
-        return Err("Password cannot be empty".into());
+
+    if data.is_empty() {
+        return Err("No key-value pairs provided".into());
     }
-    password_store.add(name, &username, &password)?;
+
+    password_store.set(name, data)?;
     password_store.save(
         &config
             .password_store_path
             .to_str()
             .ok_or("Path contains invalid UTF-8")?,
     )?;
-    println!("✓ Added entry '{}' to password store", name);
+    println!("✓ Set secret '{}' with {} keys", name, password_store.get(name)?.len());
     Ok(())
 }
 
 pub fn handle_get(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let password_store = load_lockbox()?;
-    if let Ok((username, password)) = password_store.get(name) {
-        println!("Entry: {}", name);
+    let secret = password_store.get(name)?;
+
+    println!("Entry: {}", name);
+
+    // Display in order: username, password, then other keys
+    if let Some(username) = secret.get("username") {
         println!("Username: {}", username);
-        println!("Password: {}", password);
-    } else {
-        return Err(format!("Entry '{}' not found", name).into());
     }
+    if let Some(password) = secret.get("password") {
+        println!("Password: {}", password);
+    }
+
+    // Display any other keys
+    for (key, value) in &secret {
+        if key != "username" && key != "password" {
+            println!("{}: {}", key, value);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn handle_list() -> Result<(), Box<dyn std::error::Error>> {
+    let password_store = load_lockbox()?;
+    let entries = password_store.list();
+    if entries.is_empty() {
+        println!("No entries found in the password store.");
+    } else {
+        println!("Password Store Entries:");
+        for entry in entries {
+            println!("- {}", entry);
+        }
+    }
+    Ok(())
+}
+
+pub fn handle_remove(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::new()?;
+    let mut password_store = load_lockbox()?;
+    password_store.remove(name)?;
+    password_store.save(
+        &config
+            .password_store_path
+            .to_str()
+            .ok_or("Path contains invalid UTF-8")?,
+    )?;
+    println!("✓ Removed entry '{}' from password store", name);
+    Ok(())
+}
+
+pub fn handle_update(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::new()?;
+    let mut password_store = load_lockbox()?;
+    if !password_store.entry_exists(name) {
+        return Err(format!("Entry '{}' does not exist", name).into());
+    }
+    let mut stdout = stdout();
+    print!("New Username (leave blank to keep unchanged): ");
+    stdout.flush()?;
+    let mut username_input = String::new();
+    stdin().read_line(&mut username_input)?;
+    let username = username_input.trim();
+
+    print!("New Password (leave blank to keep unchanged): ");
+    stdout.flush()?;
+    let password = read_password()?;
+
+    // Build update HashMap with only changed values
+    let mut data = HashMap::new();
+    if !username.is_empty() {
+        data.insert("username".to_string(), username.to_string());
+    }
+    if !password.trim().is_empty() {
+        data.insert("password".to_string(), password);
+    }
+
+    if data.is_empty() {
+        return Err("No changes provided".into());
+    }
+
+    password_store.update(name, data)?;
+    password_store.save(
+        &config
+            .password_store_path
+            .to_str()
+            .ok_or("Path contains invalid UTF-8")?,
+    )?;
+    println!("✓ Updated entry '{}' in password store", name);
     Ok(())
 }

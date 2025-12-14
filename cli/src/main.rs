@@ -1,4 +1,4 @@
-use self::commands::handle_init;
+use self::commands::*;
 use clap::{Parser, Subcommand};
 mod commands;
 
@@ -13,10 +13,23 @@ struct Cli {
 enum Commands {
     /// Initialize a new lockbox
     Init,
-    /// Add a new password entry
-    Add { name: String },
-    /// Get a password entry
+    /// Set a secret with multiple key-value pairs
+    /// Example: lbx set prod/app-config API_KEY=xyz123 DB_HOST=localhost DB_PORT=5432
+    Set {
+        /// Secret name (e.g., "prod/database-config")
+        name: String,
+        /// Key-value pairs in format KEY=VALUE
+        #[arg(required = true)]
+        pairs: Vec<String>,
+    },
+    /// Get a secret entry
     Get { name: String },
+    /// List all secret entries
+    List,
+    /// Remove a secret entry
+    Remove { name: String },
+    /// Update a secret entry
+    Update { name: String },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,11 +39,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Init => {
             handle_init()?;
         }
-        Commands::Add { name } => {
-            commands::handle_add(&name)?;
+        Commands::Set { name, pairs } => {
+            handle_set(&name, pairs)?;
         }
         Commands::Get { name } => {
-            commands::handle_get(&name)?;
+            handle_get(&name)?;
+        }
+        Commands::List => {
+            handle_list()?;
+        }
+        Commands::Remove { name } => {
+            handle_remove(&name)?;
+        }
+        Commands::Update { name } => {
+            handle_update(&name)?;
         }
     }
     Ok(())
