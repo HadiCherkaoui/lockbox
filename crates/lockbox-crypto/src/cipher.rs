@@ -20,7 +20,7 @@ impl SymmetricKey {
 }
 
 /// Holds encrypted data: a 12-byte nonce + the ciphertext (which includes the GCM auth tag)
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct Ciphertext {
     pub nonce: [u8; 12],
     pub data: Vec<u8>,

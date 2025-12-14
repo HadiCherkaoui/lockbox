@@ -28,15 +28,14 @@ mod tests {
     fn test_keypair_roundtrip() {
         // Generate a keypair
         let signing_key = generate_keypair();
-        let verifying_key = signing_key.verifying_key();
+        let _verifying_key = signing_key.verifying_key();
 
         // Convert to bytes (for saving to disk)
-        let private_bytes = signing_key_to_bytes(&signing_key);
-        let public_bytes = verifying_key_to_bytes(&verifying_key);
+        save_signing_key(&signing_key, "./temp_signing_key.bin").expect("should save signing key");
 
-        // Convert back from bytes (like loading from disk)
-        let _restored_signing = signing_key_from_bytes(&private_bytes);
-        let restored_verifying = verifying_key_from_bytes(&public_bytes).unwrap();
+        let _restored_signing =
+            load_signing_key("./temp_signing_key.bin").expect("should load signing key");
+        let restored_verifying = _restored_signing.verifying_key();
 
         // Sign a message with original key
         let message = b"authenticate me";

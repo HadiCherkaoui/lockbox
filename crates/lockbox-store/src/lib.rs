@@ -1,3 +1,4 @@
+pub mod keys;
 pub mod passwords;
 
 #[cfg(test)]
@@ -6,6 +7,7 @@ mod tests {
     use std::fs::remove_file;
     use std::sync::Arc;
 
+    use crate::keys::KeyStore;
     use crate::passwords::PasswordStore;
     use lockbox_crypto::cipher::SymmetricKey;
     use lockbox_crypto::keys::generate_keypair;
@@ -131,5 +133,25 @@ mod tests {
         let retrieved = store.get("test").expect("should get secret");
         assert_eq!(retrieved.get("username").unwrap(), "user1"); // unchanged
         assert_eq!(retrieved.get("password").unwrap(), "newpass"); // updated
+    }
+
+    #[test]
+    fn test_save_key() {
+        let keypair = generate_keypair();
+        let mut key_store = KeyStore::new();
+
+        key_store
+            .register_key(keypair.verifying_key(), "testkey")
+            .expect("should register key");
+        key_store
+            .save("./test_keystore_save.json")
+            .expect("should save key store");
+        let mut new_key_store = KeyStore::new();
+        new_key_store
+            .load("./test_keystore_save.json")
+            .expect("should load key store");
+        remove_file("./test_keystore_save.json").expect("should remove test file");
+        let loaded_key = new_key_store.key_allowed(&keypair.verifying_key());
+        assert_eq!(loaded_key, true);
     }
 }

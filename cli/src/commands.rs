@@ -1,7 +1,7 @@
 use dirs::home_dir;
 use lockbox_crypto::{
     cipher::SymmetricKey,
-    keys::{generate_keypair, save_signing_key},
+    keys::{generate_keypair, save_signing_key, save_verifying_key},
 };
 use lockbox_store::passwords::PasswordStore;
 use rpassword::read_password;
