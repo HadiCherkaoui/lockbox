@@ -6,38 +6,28 @@ use ed25519_dalek::SigningKey;
 use rand::RngCore;
 use zeroize::Zeroizing;
 
-/// A 256-bit symmetric key for AES-256-GCM encryption
-/// The Zeroizing wrapper ensures the key is wiped from memory when dropped
 pub struct SymmetricKey(Zeroizing<[u8; 32]>);
 
 impl SymmetricKey {
-    /// Derive a 256-bit key from Ed25519 signing key
     pub fn from_ed25519(signing_key: &SigningKey) -> Self {
-        // Use the signing key bytes as source material
         let key_bytes = signing_key.to_bytes();
         SymmetricKey(Zeroizing::new(key_bytes))
     }
 }
 
-/// Holds encrypted data: a 12-byte nonce + the ciphertext (which includes the GCM auth tag)
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct Ciphertext {
     pub nonce: [u8; 12],
     pub data: Vec<u8>,
 }
 
-/// Encrypt plaintext using AES-256-GCM
-/// Returns the nonce + encrypted data, or an error if encryption fails
 pub fn encrypt(key: &SymmetricKey, plaintext: &[u8]) -> Result<Ciphertext, String> {
-    // Create the AES-256-GCM cipher from our key
     let cipher = Aes256Gcm::new(key.0.as_ref().into());
 
-    // Generate a random 12-byte nonce (number used once)
     let mut nonce_bytes = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    // Encrypt the plaintext - this also adds an authentication tag
     let ciphertext = cipher
         .encrypt(nonce, plaintext)
         .map_err(|e| format!("Encryption failed: {}", e))?;

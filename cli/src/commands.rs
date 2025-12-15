@@ -1,13 +1,13 @@
+use crate::helpers::{get, list, register_server, remove, set, update};
 use dirs::home_dir;
+use ed25519_dalek::SigningKey;
 use lockbox_crypto::{
-    cipher::SymmetricKey,
-    keys::{generate_keypair, save_signing_key, save_verifying_key},
+    cipher::{SymmetricKey, encrypt},
+    keys::{generate_keypair, save_signing_key},
 };
-use lockbox_store::passwords::PasswordStore;
-use rpassword::read_password;
-use std::collections::HashMap;
-use std::sync::Arc;
+use lockbox_store::secrets::Secret;
 use std::{
+    collections::HashMap,
     fs::create_dir_all,
     io::{Write, stdin, stdout},
     path::{Path, PathBuf},
@@ -16,60 +16,75 @@ use std::{
 struct Config {
     lockbox_path: PathBuf,
     keypair_path: PathBuf,
-    password_store_path: PathBuf,
+    base_url_path: PathBuf,
 }
 
 impl Config {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let home = home_dir().ok_or("home directory not found")?;
-        let lockbox_path = home.join(".lockbox");
-        let keypair_path = lockbox_path.join("id_ed25519");
-        let password_store_path = lockbox_path.join("passwords.json");
+        let lockbox_path = home_dir()
+            .ok_or("Could not find home directory")?
+            .join(".lockbox");
+
+        let keypair_path = lockbox_path.join("keypair.bin");
+        let base_url_path = lockbox_path.join("serverbase.txt");
+
         Ok(Config {
             lockbox_path,
             keypair_path,
-            password_store_path,
+            base_url_path,
         })
     }
 }
 
-fn load_lockbox() -> Result<PasswordStore, Box<dyn std::error::Error>> {
-    let config = Config::new()?;
-    if !config.lockbox_path.try_exists()? {
-        return Err("Lockbox not initialized. Please run 'lockbox init' first.".into());
-    }
-    let keypair = lockbox_crypto::keys::load_signing_key(
-        config
-            .keypair_path
-            .to_str()
-            .ok_or("Path contains invalid UTF-8")?,
-    )?;
-    let symmetric_key = Arc::new(SymmetricKey::from_ed25519(&keypair));
-    let mut password_store = PasswordStore::new(symmetric_key);
-    password_store.load(
-        &config
-            .password_store_path
-            .to_str()
-            .ok_or("Path contains invalid UTF-8")?,
-    )?;
-    Ok(password_store)
+struct ClientConfig {
+    base_url: String,
+    keypair: SigningKey,
 }
 
-pub fn handle_init() -> Result<(), Box<dyn std::error::Error>> {
+impl ClientConfig {
+    fn load(config: &Config) -> Result<Self, Box<dyn std::error::Error>> {
+        let base_url = std::fs::read_to_string(&config.base_url_path)?
+            .trim()
+            .to_string();
+        let keypair = lockbox_crypto::keys::load_signing_key(
+            config
+                .keypair_path
+                .to_str()
+                .ok_or("Path contains invalid UTF-8")?,
+        )?;
+        Ok(ClientConfig { base_url, keypair })
+    }
+}
+
+fn prompt(prompt_text: &str) -> Result<String, Box<dyn std::error::Error>> {
+    print!("{}", prompt_text);
+    stdout().flush()?;
+    let mut input = String::new();
+    stdin().read_line(&mut input)?;
+    Ok(input.trim().to_string())
+}
+
+pub async fn handle_init() -> Result<(), Box<dyn std::error::Error>> {
     println!("Initializing a new lockbox...");
     let config = Config::new()?;
     let dir = Path::new(config.lockbox_path.as_path());
     if dir.try_exists()? {
         return Err(format!(
-            "Lockbox already exists at {}",
+            "Lockbox already exists at {}. Remove it first if you want to reinitialize.",
             config.lockbox_path.display()
         )
         .into());
     }
-    create_dir_all(dir)?;
-    println!("✓ Created: {}", config.lockbox_path.display());
+
+    create_dir_all(&config.lockbox_path)?;
+    println!(
+        "✓ Created lockbox directory at {}",
+        config.lockbox_path.display()
+    );
+
     let keypair = generate_keypair();
     println!("✓ Generated Ed25519 keypair");
+
     save_signing_key(
         &keypair,
         config
@@ -78,29 +93,25 @@ pub fn handle_init() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("Path contains invalid UTF-8")?,
     )?;
     println!("✓ Saved signing key to {}", config.keypair_path.display());
-    let symmetric_key = Arc::new(SymmetricKey::from_ed25519(&keypair));
-    let pwd_store = PasswordStore::new(symmetric_key);
-    pwd_store.save(
-        &config
-            .password_store_path
-            .to_str()
-            .ok_or("Path contains invalid UTF-8")?,
+    println!("Registering Server...");
+    let base_url = prompt("Server Base URL: ")?;
+    let api_key = prompt("API Key: ")?;
+    let label = prompt("Label for this key (e.g., 'my-laptop'): ")?;
+    write!(
+        std::fs::File::create(&config.base_url_path)?,
+        "{}",
+        base_url.trim().trim_end_matches('/')
     )?;
-    println!(
-        "✓ Created empty password store at {}",
-        config.password_store_path.display()
-    );
-    println!("Lockbox initialization complete!");
+    register_server(&keypair, &base_url, &api_key, &label).await?;
     Ok(())
 }
 
-pub fn handle_set(name: &str, pairs: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_set(
+    name: String,
+    pairs: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::new()?;
-    let mut password_store = load_lockbox()?;
-
-    if password_store.entry_exists(name) {
-        return Err(format!("Secret '{}' already exists. Use 'update' to modify it.", name).into());
-    }
+    let mut client_config = ClientConfig::load(&config)?;
 
     // Parse KEY=VALUE pairs
     let mut data = HashMap::new();
@@ -123,106 +134,107 @@ pub fn handle_set(name: &str, pairs: Vec<String>) -> Result<(), Box<dyn std::err
         return Err("No key-value pairs provided".into());
     }
 
-    password_store.set(name, data)?;
-    password_store.save(
-        &config
-            .password_store_path
-            .to_str()
-            .ok_or("Path contains invalid UTF-8")?,
-    )?;
-    println!("✓ Set secret '{}' with {} keys", name, password_store.get(name)?.len());
+    // Encrypt the values client-side (E2EE!)
+    let symmetric_key = SymmetricKey::from_ed25519(&client_config.keypair);
+    let mut secret = Secret {
+        data: HashMap::new(),
+    };
+
+    for (k, v) in &data {
+        secret
+            .data
+            .insert(k.clone(), encrypt(&symmetric_key, v.as_bytes())?);
+    }
+
+    set(
+        name,
+        secret,
+        &client_config.base_url,
+        &mut client_config.keypair,
+    )
+    .await?;
     Ok(())
 }
 
-pub fn handle_get(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let password_store = load_lockbox()?;
-    let secret = password_store.get(name)?;
-
-    println!("Entry: {}", name);
-
-    // Display in order: username, password, then other keys
-    if let Some(username) = secret.get("username") {
-        println!("Username: {}", username);
-    }
-    if let Some(password) = secret.get("password") {
-        println!("Password: {}", password);
-    }
-
-    // Display any other keys
-    for (key, value) in &secret {
-        if key != "username" && key != "password" {
-            println!("{}: {}", key, value);
-        }
-    }
-
-    Ok(())
-}
-
-pub fn handle_list() -> Result<(), Box<dyn std::error::Error>> {
-    let password_store = load_lockbox()?;
-    let entries = password_store.list();
-    if entries.is_empty() {
-        println!("No entries found in the password store.");
-    } else {
-        println!("Password Store Entries:");
-        for entry in entries {
-            println!("- {}", entry);
-        }
-    }
-    Ok(())
-}
-
-pub fn handle_remove(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_get(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::new()?;
-    let mut password_store = load_lockbox()?;
-    password_store.remove(name)?;
-    password_store.save(
-        &config
-            .password_store_path
-            .to_str()
-            .ok_or("Path contains invalid UTF-8")?,
-    )?;
-    println!("✓ Removed entry '{}' from password store", name);
+    let mut client_config = ClientConfig::load(&config)?;
+    let secret = get(name, &client_config.base_url, &mut client_config.keypair).await?;
+    let symmetric_key = SymmetricKey::from_ed25519(&client_config.keypair);
+    println!("Retrieved secret:");
+    for (k, v) in &secret.data {
+        let decrypted = String::from_utf8(lockbox_crypto::cipher::decrypt(&symmetric_key, v)?)?;
+        println!("{}={}", k, decrypted);
+    }
     Ok(())
 }
 
-pub fn handle_update(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_list() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::new()?;
-    let mut password_store = load_lockbox()?;
-    if !password_store.entry_exists(name) {
-        return Err(format!("Entry '{}' does not exist", name).into());
+    let mut client_config = ClientConfig::load(&config)?;
+    let secret_names = list(&client_config.base_url, &mut client_config.keypair).await?;
+    println!("All Secrets:");
+    for name in secret_names {
+        println!("- {}", name);
     }
-    let mut stdout = stdout();
-    print!("New Username (leave blank to keep unchanged): ");
-    stdout.flush()?;
-    let mut username_input = String::new();
-    stdin().read_line(&mut username_input)?;
-    let username = username_input.trim();
+    Ok(())
+}
 
-    print!("New Password (leave blank to keep unchanged): ");
-    stdout.flush()?;
-    let password = read_password()?;
+pub async fn handle_remove(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::new()?;
+    let mut client_config = ClientConfig::load(&config)?;
+    remove(name, &client_config.base_url, &mut client_config.keypair).await?;
+    println!("✓ Secret '{}' removed successfully", name);
+    Ok(())
+}
 
-    // Build update HashMap with only changed values
+pub async fn handle_update(
+    name: &str,
+    pairs: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::new()?;
+    let mut client_config = ClientConfig::load(&config)?;
+
+    // Parse KEY=VALUE pairs
     let mut data = HashMap::new();
-    if !username.is_empty() {
-        data.insert("username".to_string(), username.to_string());
-    }
-    if !password.trim().is_empty() {
-        data.insert("password".to_string(), password);
+    for pair in pairs {
+        let parts: Vec<&str> = pair.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid format '{}'. Use KEY=VALUE", pair).into());
+        }
+        let key = parts[0].trim();
+        let value = parts[1].trim();
+
+        if key.is_empty() || value.is_empty() {
+            return Err(format!("Key or value cannot be empty in '{}'", pair).into());
+        }
+
+        data.insert(key.to_string(), value.to_string());
     }
 
     if data.is_empty() {
-        return Err("No changes provided".into());
+        return Err("No key-value pairs provided".into());
     }
 
-    password_store.update(name, data)?;
-    password_store.save(
-        &config
-            .password_store_path
-            .to_str()
-            .ok_or("Path contains invalid UTF-8")?,
-    )?;
-    println!("✓ Updated entry '{}' in password store", name);
+    // Encrypt the values client-side (E2EE!)
+    let symmetric_key = SymmetricKey::from_ed25519(&client_config.keypair);
+    let mut secret = Secret {
+        data: HashMap::new(),
+    };
+
+    for (k, v) in &data {
+        secret
+            .data
+            .insert(k.clone(), encrypt(&symmetric_key, v.as_bytes())?);
+    }
+
+    update(
+        name,
+        secret,
+        &client_config.base_url,
+        &mut client_config.keypair,
+    )
+    .await?;
+    println!("✓ Secret '{}' updated successfully", name);
     Ok(())
 }

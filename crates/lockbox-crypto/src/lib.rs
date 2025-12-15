@@ -3,6 +3,8 @@ pub mod keys;
 
 #[cfg(test)]
 mod tests {
+    use ed25519_dalek::ed25519::signature::SignerMut;
+
     use crate::cipher::{SymmetricKey, decrypt, encrypt};
     use crate::keys::*;
 
@@ -27,29 +29,26 @@ mod tests {
     #[test]
     fn test_keypair_roundtrip() {
         // Generate a keypair
-        let signing_key = generate_keypair();
+        let mut signing_key = generate_keypair();
         let _verifying_key = signing_key.verifying_key();
 
         // Convert to bytes (for saving to disk)
         save_signing_key(&signing_key, "./temp_signing_key.bin").expect("should save signing key");
 
-        let _restored_signing =
+        let restored_signing =
             load_signing_key("./temp_signing_key.bin").expect("should load signing key");
-        let restored_verifying = _restored_signing.verifying_key();
+        let restored_verifying = restored_signing.verifying_key();
 
         // Sign a message with original key
         let message = b"authenticate me";
-        let signature = sign(&signing_key, message);
-
-        // Verify with restored public key - should work!
-        assert!(verify(&restored_verifying, message, &signature));
+        let signature = signing_key.try_sign(message).expect("should sign message");
+        let verify_result = restored_verifying.verify_strict(message, &signature);
+        assert!(verify_result.is_ok());
+        std::fs::remove_file("./temp_signing_key.bin").expect("should remove temp file");
 
         // Try wrong message - should fail
-        assert!(!verify(
-            &restored_verifying,
-            b"different message",
-            &signature
-        ));
+        let wrong_verify = restored_verifying.verify_strict(b"different message", &signature);
+        assert!(wrong_verify.is_err());
     }
 
     #[test]

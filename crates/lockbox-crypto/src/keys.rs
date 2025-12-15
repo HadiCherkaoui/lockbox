@@ -1,9 +1,7 @@
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use std::fs::{read, write};
 
-/// Generate a new Ed25519 keypair
-/// Returns the private key (SigningKey), which contains both private and public parts
 pub fn generate_keypair() -> SigningKey {
     let mut csprng = OsRng;
     SigningKey::generate(&mut csprng)

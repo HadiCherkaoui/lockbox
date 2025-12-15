@@ -1,6 +1,7 @@
 use self::commands::*;
 use clap::{Parser, Subcommand};
 mod commands;
+mod helpers;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -11,48 +12,48 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Initialize a new lockbox
     Init,
-    /// Set a secret with multiple key-value pairs
-    /// Example: lbx set prod/app-config API_KEY=xyz123 DB_HOST=localhost DB_PORT=5432
     Set {
-        /// Secret name (e.g., "prod/database-config")
         name: String,
-        /// Key-value pairs in format KEY=VALUE
         #[arg(required = true)]
         pairs: Vec<String>,
     },
-    /// Get a secret entry
-    Get { name: String },
-    /// List all secret entries
+    Get {
+        name: String,
+    },
     List,
-    /// Remove a secret entry
-    Remove { name: String },
-    /// Update a secret entry
-    Update { name: String },
+    Remove {
+        name: String,
+    },
+    Update {
+        name: String,
+        #[arg(required = true)]
+        pairs: Vec<String>,
+    },
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Init => {
-            handle_init()?;
+            handle_init().await?;
         }
         Commands::Set { name, pairs } => {
-            handle_set(&name, pairs)?;
+            handle_set(name, pairs).await?;
         }
         Commands::Get { name } => {
-            handle_get(&name)?;
+            handle_get(&name).await?;
         }
         Commands::List => {
-            handle_list()?;
+            handle_list().await?;
         }
         Commands::Remove { name } => {
-            handle_remove(&name)?;
+            handle_remove(&name).await?;
         }
-        Commands::Update { name } => {
-            handle_update(&name)?;
+        Commands::Update { name, pairs } => {
+            handle_update(&name, pairs).await?;
         }
     }
     Ok(())

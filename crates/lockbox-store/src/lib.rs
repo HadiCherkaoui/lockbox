@@ -1,142 +1,231 @@
 pub mod keys;
-pub mod passwords;
+pub mod secrets;
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
     use std::fs::remove_file;
-    use std::sync::Arc;
 
     use crate::keys::KeyStore;
-    use crate::passwords::PasswordStore;
-    use lockbox_crypto::cipher::SymmetricKey;
+    use crate::secrets::{Secret, SecretStore};
+    use lockbox_crypto::cipher::{SymmetricKey, decrypt, encrypt};
     use lockbox_crypto::keys::generate_keypair;
 
     #[test]
-    fn test_password_store() {
+    fn test_secret_store_basic() {
         let keypair = generate_keypair();
-        let key = Arc::new(SymmetricKey::from_ed25519(&keypair));
-        let mut store = PasswordStore::new(key);
+        let key = SymmetricKey::from_ed25519(&keypair);
+        let mut store = SecretStore::new();
 
-        // Create a secret with username and password
+        // Encrypt data on "client side" (this would happen in CLI)
         let mut data = HashMap::new();
-        data.insert("username".to_string(), "test@test.com".to_string());
-        data.insert("password".to_string(), "secretpasswd".to_string());
+        data.insert(
+            "username".to_string(),
+            encrypt(&key, b"test@test.com").expect("should encrypt"),
+        );
+        data.insert(
+            "password".to_string(),
+            encrypt(&key, b"secretpasswd").expect("should encrypt"),
+        );
+        let secret = Secret { data };
 
-        store.set("email", data).expect("should set secret");
+        // Store encrypted secret (this is what server does)
+        store.set("email", secret).expect("should set secret");
 
-        // Get entire secret
+        // Retrieve encrypted secret (server returns this)
         let retrieved = store.get("email").expect("should get secret");
-        assert_eq!(retrieved.get("username").unwrap(), "test@test.com");
-        assert_eq!(retrieved.get("password").unwrap(), "secretpasswd");
 
-        // Get single value
-        let password = store
-            .get_value("email", "password")
-            .expect("should get value");
-        assert_eq!(password, "secretpasswd");
+        // Decrypt on "client side" (this would happen in CLI)
+        for (k, v) in &retrieved.data {
+            let decrypted = String::from_utf8(decrypt(&key, v).expect("should decrypt"))
+                .expect("should convert to string");
+            if k == "username" {
+                assert_eq!(decrypted, "test@test.com");
+            } else if k == "password" {
+                assert_eq!(decrypted, "secretpasswd");
+            }
+        }
 
-        // List secrets
+        // List secrets (server operation)
         let list = store.list();
         assert_eq!(list, vec!["email".to_string()]);
     }
 
     #[test]
-    fn test_password_store_save_load() {
+    fn test_secret_store_save_load() {
         let keypair = generate_keypair();
-        let key = Arc::new(SymmetricKey::from_ed25519(&keypair));
-        let mut store = PasswordStore::new(key.clone());
+        let key = SymmetricKey::from_ed25519(&keypair);
+        let mut store = SecretStore::new();
 
-        // Create and save secret
+        // Encrypt data (client-side)
         let mut data = HashMap::new();
-        data.insert("username".to_string(), "test@test.com".to_string());
-        data.insert("password".to_string(), "secretpasswd".to_string());
+        data.insert(
+            "username".to_string(),
+            encrypt(&key, b"test@test.com").expect("should encrypt"),
+        );
+        data.insert(
+            "password".to_string(),
+            encrypt(&key, b"secretpasswd").expect("should encrypt"),
+        );
+        let secret = Secret { data };
 
-        store.set("email", data).expect("should set secret");
+        store.set("email", secret).expect("should set secret");
         store
-            .save("./test_pwdstore_save.json")
-            .expect("should save password store");
+            .save("./test_secretstore_save.json")
+            .expect("should save secret store");
 
         // Load in same store
         store
-            .load("./test_pwdstore_save.json")
-            .expect("should load password store");
+            .load("./test_secretstore_save.json")
+            .expect("should load secret store");
 
-        // Load in new store
-        let mut new_store = PasswordStore::new(key.clone());
+        // Load in new store (simulating server restart)
+        let mut new_store = SecretStore::new();
         new_store
-            .load("./test_pwdstore_save.json")
-            .expect("should load password store");
+            .load("./test_secretstore_save.json")
+            .expect("should load secret store");
 
         let retrieved = store.get("email").expect("should get secret");
         let retrieved_new = new_store.get("email").expect("should get secret");
 
-        remove_file("./test_pwdstore_save.json").expect("should remove test file");
+        remove_file("./test_secretstore_save.json").expect("should remove test file");
 
-        assert_eq!(retrieved_new, retrieved);
-        assert_eq!(retrieved.get("username").unwrap(), "test@test.com");
-        assert_eq!(retrieved.get("password").unwrap(), "secretpasswd");
+        // Verify both stores have same encrypted data
+        assert_eq!(retrieved_new.data.len(), retrieved.data.len());
+
+        // Decrypt and verify (client-side)
+        for (k, v) in &retrieved.data {
+            let decrypted = String::from_utf8(decrypt(&key, v).expect("should decrypt"))
+                .expect("should convert to string");
+            if k == "username" {
+                assert_eq!(decrypted, "test@test.com");
+            } else if k == "password" {
+                assert_eq!(decrypted, "secretpasswd");
+            }
+        }
     }
 
     #[test]
     fn test_multi_key_secret() {
         let keypair = generate_keypair();
-        let key = Arc::new(SymmetricKey::from_ed25519(&keypair));
-        let mut store = PasswordStore::new(key);
+        let key = SymmetricKey::from_ed25519(&keypair);
+        let mut store = SecretStore::new();
 
         // Create a secret with multiple keys (like K8s env secret)
+        // Encrypt on client-side
         let mut data = HashMap::new();
-        data.insert("API_KEY".to_string(), "key123".to_string());
-        data.insert("DB_HOST".to_string(), "localhost".to_string());
-        data.insert("DB_PORT".to_string(), "5432".to_string());
-        data.insert("DB_PASSWORD".to_string(), "dbpass".to_string());
+        data.insert(
+            "API_KEY".to_string(),
+            encrypt(&key, b"key123").expect("should encrypt"),
+        );
+        data.insert(
+            "DB_HOST".to_string(),
+            encrypt(&key, b"localhost").expect("should encrypt"),
+        );
+        data.insert(
+            "DB_PORT".to_string(),
+            encrypt(&key, b"5432").expect("should encrypt"),
+        );
+        data.insert(
+            "DB_PASSWORD".to_string(),
+            encrypt(&key, b"dbpass").expect("should encrypt"),
+        );
+        let secret = Secret { data };
 
         store
-            .set("prod/database-config", data)
+            .set("prod/database-config", secret)
             .expect("should set multi-key secret");
 
-        // Retrieve all values
+        // Retrieve encrypted secret (server operation)
         let retrieved = store
             .get("prod/database-config")
             .expect("should get secret");
-        assert_eq!(retrieved.get("API_KEY").unwrap(), "key123");
-        assert_eq!(retrieved.get("DB_HOST").unwrap(), "localhost");
-        assert_eq!(retrieved.get("DB_PORT").unwrap(), "5432");
-        assert_eq!(retrieved.get("DB_PASSWORD").unwrap(), "dbpass");
 
-        // Retrieve single value
-        let db_password = store
-            .get_value("prod/database-config", "DB_PASSWORD")
-            .expect("should get value");
-        assert_eq!(db_password, "dbpass");
+        // Decrypt and verify (client-side)
+        assert_eq!(
+            String::from_utf8(decrypt(&key, &retrieved.data["API_KEY"]).unwrap()).unwrap(),
+            "key123"
+        );
+        assert_eq!(
+            String::from_utf8(decrypt(&key, &retrieved.data["DB_HOST"]).unwrap()).unwrap(),
+            "localhost"
+        );
+        assert_eq!(
+            String::from_utf8(decrypt(&key, &retrieved.data["DB_PORT"]).unwrap()).unwrap(),
+            "5432"
+        );
+        assert_eq!(
+            String::from_utf8(decrypt(&key, &retrieved.data["DB_PASSWORD"]).unwrap()).unwrap(),
+            "dbpass"
+        );
     }
 
     #[test]
     fn test_update_secret() {
         let keypair = generate_keypair();
-        let key = Arc::new(SymmetricKey::from_ed25519(&keypair));
-        let mut store = PasswordStore::new(key);
+        let key = SymmetricKey::from_ed25519(&keypair);
+        let mut store = SecretStore::new();
 
-        // Create initial secret
+        // Create initial secret (encrypt client-side)
         let mut data = HashMap::new();
-        data.insert("username".to_string(), "user1".to_string());
-        data.insert("password".to_string(), "pass1".to_string());
-        store.set("test", data).expect("should set secret");
+        data.insert(
+            "username".to_string(),
+            encrypt(&key, b"user1").expect("should encrypt"),
+        );
+        data.insert(
+            "password".to_string(),
+            encrypt(&key, b"pass1").expect("should encrypt"),
+        );
+        let secret = Secret { data };
+        store.set("test", secret).expect("should set secret");
 
-        // Update only password, keep username
+        // Update only password, keep username (client encrypts new value)
         let mut update_data = HashMap::new();
-        update_data.insert("password".to_string(), "newpass".to_string());
+        update_data.insert(
+            "password".to_string(),
+            encrypt(&key, b"newpass").expect("should encrypt"),
+        );
         store
             .update("test", update_data)
             .expect("should update secret");
 
+        // Retrieve and decrypt (client-side)
         let retrieved = store.get("test").expect("should get secret");
-        assert_eq!(retrieved.get("username").unwrap(), "user1"); // unchanged
-        assert_eq!(retrieved.get("password").unwrap(), "newpass"); // updated
+        let username =
+            String::from_utf8(decrypt(&key, &retrieved.data["username"]).unwrap()).unwrap();
+        let password =
+            String::from_utf8(decrypt(&key, &retrieved.data["password"]).unwrap()).unwrap();
+
+        assert_eq!(username, "user1"); // unchanged
+        assert_eq!(password, "newpass"); // updated
     }
 
     #[test]
-    fn test_save_key() {
+    fn test_remove_secret() {
+        let keypair = generate_keypair();
+        let key = SymmetricKey::from_ed25519(&keypair);
+        let mut store = SecretStore::new();
+
+        // Add a secret
+        let mut data = HashMap::new();
+        data.insert(
+            "username".to_string(),
+            encrypt(&key, b"test").expect("should encrypt"),
+        );
+        let secret = Secret { data };
+        store.set("test", secret).expect("should set secret");
+
+        assert!(store.entry_exists("test"));
+
+        // Remove it
+        store.remove("test").expect("should remove secret");
+
+        assert!(!store.entry_exists("test"));
+        assert!(store.get("test").is_err());
+    }
+
+    #[test]
+    fn test_keystore() {
         let keypair = generate_keypair();
         let mut key_store = KeyStore::new();
 
@@ -146,12 +235,14 @@ mod tests {
         key_store
             .save("./test_keystore_save.json")
             .expect("should save key store");
+
         let mut new_key_store = KeyStore::new();
         new_key_store
             .load("./test_keystore_save.json")
             .expect("should load key store");
+
         remove_file("./test_keystore_save.json").expect("should remove test file");
-        let loaded_key = new_key_store.key_allowed(&keypair.verifying_key());
-        assert_eq!(loaded_key, true);
+
+        assert!(new_key_store.key_allowed(&keypair.verifying_key()));
     }
 }
