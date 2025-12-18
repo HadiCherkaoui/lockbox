@@ -30,8 +30,13 @@ static API_KEY: Lazy<String> = Lazy::new(|| {
     key
 });
 
-static JWT_SECRET: Lazy<String> =
-    Lazy::new(|| env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set"));
+static JWT_SECRET: Lazy<String> = Lazy::new(|| {
+    let key = env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set");
+    if key.trim().is_empty() {
+        panic!("JWT_SECRET cannot be empty");
+    }
+    key
+});
 
 const CHALLENGE_EXPIRY_SECS: u64 = 300;
 const JWT_EXPIRY_SECS: usize = 60;
@@ -65,6 +70,9 @@ async fn main() {
         challenges: Arc::new(RwLock::new(HashMap::new())),
         secret_store: Arc::new(RwLock::new(secret_store)),
     };
+
+    let _ = &*API_KEY;
+    let _ = &*JWT_SECRET;
 
     // Spawn background task to clean up expired challenges (prevents memory leak)
     let challenges_cleanup = state.challenges.clone();
@@ -199,7 +207,7 @@ async fn challenge(
     Json(payload): Json<ChallengeRequest>,
 ) -> impl IntoResponse {
     // Check if public key is registered
-    let Ok(keystore) = state.keystore.read() else {
+       let Ok(keystore) = state.keystore.read() else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": "Failed to acquire keystore lock"})),
