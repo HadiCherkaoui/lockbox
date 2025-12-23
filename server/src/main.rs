@@ -44,6 +44,13 @@ const JWT_EXPIRY_SECS: usize = 60;
 const CHALLENGE_CLEANUP_INTERVAL_SECS: u64 = 60;
 const MAX_SECRET_NAME_LENGTH: usize = 256;
 
+fn current_timestamp() -> Result<i64, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .map_err(|e| format!("Failed to get current time: {}", e))
+}
+
 #[derive(Clone)]
 struct AppState {
     db: Arc<Database>,
@@ -64,10 +71,10 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(CHALLENGE_CLEANUP_INTERVAL_SECS)).await;
-            let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-                Ok(d) => d.as_secs() as i64,
+            let now = match current_timestamp() {
+                Ok(ts) => ts,
                 Err(e) => {
-                    eprintln!("Failed to get current time: {}", e);
+                    eprintln!("{}", e);
                     continue;
                 }
             };
@@ -205,12 +212,12 @@ async fn challenge(
     }
     let mut nonce = [0u8; 32];
     rand::rng().fill_bytes(&mut nonce);
-    let challenge_b64 = general_purpose::STANDARD.encode(&nonce);
+    let challenge_b64 = general_purpose::STANDARD.encode(nonce);
 
-    let expires_at = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => (d.as_secs() + CHALLENGE_EXPIRY_SECS) as i64,
+    let expires_at = match current_timestamp() {
+        Ok(ts) => ts + CHALLENGE_EXPIRY_SECS as i64,
         Err(e) => {
-            eprintln!("Failed to get current time: {}", e);
+            eprintln!("{}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Failed to generate challenge"})),
@@ -265,10 +272,10 @@ async fn verify(
                 .into_response();
         }
     };
-    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as i64,
+    let now = match current_timestamp() {
+        Ok(ts) => ts,
         Err(e) => {
-            eprintln!("Failed to get current time: {}", e);
+            eprintln!("{}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Failed to verify challenge"})),
@@ -312,10 +319,10 @@ async fn verify(
         )
             .into_response();
     }
-    let exp = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => (d.as_secs() as usize) + JWT_EXPIRY_SECS,
+    let exp = match current_timestamp() {
+        Ok(ts) => (ts as usize) + JWT_EXPIRY_SECS,
         Err(e) => {
-            eprintln!("Failed to get current time: {}", e);
+            eprintln!("{}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthResponse {
@@ -470,7 +477,7 @@ async fn update_secret(
             .into_response();
     }
 
-    if let Err(_) = state.db.update_secret(name, payload.data).await {
+    if state.db.update_secret(name, payload.data).await.is_err() {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "Secret not found"})),

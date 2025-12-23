@@ -11,7 +11,7 @@ pub struct Secret {
 #[cfg(test)]
 mod tests {
     use crate::db::Database;
-    use lockbox_crypto::cipher::{decrypt, encrypt, SymmetricKey};
+    use lockbox_crypto::cipher::{SymmetricKey, decrypt, encrypt};
     use lockbox_crypto::keys::generate_keypair;
     use std::collections::HashMap;
 
@@ -33,7 +33,9 @@ mod tests {
         );
 
         // Store encrypted secret (server operation)
-        db.set_secret("email", &data).await.expect("should set secret");
+        db.set_secret("email", &data)
+            .await
+            .expect("should set secret");
 
         // Retrieve encrypted secret (server returns this)
         let retrieved = db.get_secret("email").await.expect("should get secret");
@@ -128,7 +130,9 @@ mod tests {
             "password".to_string(),
             encrypt(&key, b"pass1").expect("should encrypt"),
         );
-        db.set_secret("test", &data).await.expect("should set secret");
+        db.set_secret("test", &data)
+            .await
+            .expect("should set secret");
 
         // Update only password
         let mut update_data = HashMap::new();
@@ -142,10 +146,8 @@ mod tests {
 
         // Retrieve and decrypt
         let retrieved = db.get_secret("test").await.expect("should get secret");
-        let username =
-            String::from_utf8(decrypt(&key, &retrieved["username"]).unwrap()).unwrap();
-        let password =
-            String::from_utf8(decrypt(&key, &retrieved["password"]).unwrap()).unwrap();
+        let username = String::from_utf8(decrypt(&key, &retrieved["username"]).unwrap()).unwrap();
+        let password = String::from_utf8(decrypt(&key, &retrieved["password"]).unwrap()).unwrap();
 
         assert_eq!(username, "user1"); // unchanged
         assert_eq!(password, "newpass"); // updated
@@ -165,16 +167,26 @@ mod tests {
             "username".to_string(),
             encrypt(&key, b"test").expect("should encrypt"),
         );
-        db.set_secret("test", &data).await.expect("should set secret");
+        db.set_secret("test", &data)
+            .await
+            .expect("should set secret");
 
-        assert!(db.secret_exists("test").await.expect("should check existence"));
+        assert!(
+            db.secret_exists("test")
+                .await
+                .expect("should check existence")
+        );
 
         // Remove it
         db.remove_secret("test")
             .await
             .expect("should remove secret");
 
-        assert!(!db.secret_exists("test").await.expect("should check existence"));
+        assert!(
+            !db.secret_exists("test")
+                .await
+                .expect("should check existence")
+        );
         assert!(db.get_secret("test").await.is_err());
 
         db.close().await;
@@ -189,10 +201,11 @@ mod tests {
             .await
             .expect("should register key");
 
-        assert!(db
-            .key_allowed(&keypair.verifying_key())
-            .await
-            .expect("should check key"));
+        assert!(
+            db.key_allowed(&keypair.verifying_key())
+                .await
+                .expect("should check key")
+        );
 
         // Try registering same key again (should fail)
         let result = db.register_key(&keypair.verifying_key(), "testkey").await;

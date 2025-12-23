@@ -9,13 +9,17 @@ use reqwest::Client;
 
 const USER_AGENT: &str = "lockbox-cli/1.0";
 
+fn build_http_client() -> Result<Client, Box<dyn std::error::Error>> {
+    Ok(Client::builder().user_agent(USER_AGENT).build()?)
+}
+
 pub async fn register_server(
     keypair: &SigningKey,
     base_url: &str,
     api_key: &str,
     label: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
+    let client = build_http_client()?;
 
     let request_payload = RegisterKeyRequest {
         public_key: keypair.verifying_key(),
@@ -46,7 +50,7 @@ pub async fn set(
     keypair: &mut SigningKey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let token = authenticate(base_url, keypair).await?;
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
+    let client = build_http_client()?;
     let request_payload = SetSecretRequest { name, secret };
     let res = client
         .post(format!("{}/secrets", base_url))
@@ -70,7 +74,7 @@ pub async fn get(
     keypair: &mut SigningKey,
 ) -> Result<Secret, Box<dyn std::error::Error>> {
     let token = authenticate(base_url, keypair).await?;
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
+    let client = build_http_client()?;
     let res = client
         .get(format!("{}/secrets/{}", base_url, name))
         .header("Authorization", format!("Bearer {}", token))
@@ -87,7 +91,7 @@ pub async fn list(
     keypair: &mut SigningKey,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let token = authenticate(base_url, keypair).await?;
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
+    let client = build_http_client()?;
     let res = client
         .get(format!("{}/secrets", base_url))
         .header("Authorization", format!("Bearer {}", token))
@@ -106,7 +110,7 @@ pub async fn remove(
     keypair: &mut SigningKey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let token = authenticate(base_url, keypair).await?;
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
+    let client = build_http_client()?;
     let res = client
         .delete(format!("{}/secrets/{}", base_url, name))
         .header("Authorization", format!("Bearer {}", token))
@@ -128,7 +132,7 @@ pub async fn update(
     keypair: &mut SigningKey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let token = authenticate(base_url, keypair).await?;
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
+    let client = build_http_client()?;
     let res = client
         .patch(format!("{}/secrets/{}", base_url, name))
         .header("Authorization", format!("Bearer {}", token))
@@ -148,7 +152,7 @@ async fn authenticate(
     base_url: &str,
     keypair: &mut SigningKey,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
+    let client = build_http_client()?;
 
     let request_payload = ChallengeRequest {
         public_key: keypair.verifying_key(),

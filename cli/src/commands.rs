@@ -64,6 +64,55 @@ fn prompt(prompt_text: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(input.trim().to_string())
 }
 
+fn load_client_config() -> Result<ClientConfig, Box<dyn std::error::Error>> {
+    let config = Config::new()?;
+    ClientConfig::load(&config)
+}
+
+fn parse_key_value_pairs(
+    pairs: Vec<String>,
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let mut data = HashMap::new();
+    for pair in pairs {
+        let parts: Vec<&str> = pair.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid format '{}'. Use KEY=VALUE", pair).into());
+        }
+        let key = parts[0].trim();
+        let value = parts[1].trim();
+
+        if key.is_empty() || value.is_empty() {
+            return Err(format!("Key or value cannot be empty in '{}'", pair).into());
+        }
+
+        data.insert(key.to_string(), value.to_string());
+    }
+
+    if data.is_empty() {
+        return Err("No key-value pairs provided".into());
+    }
+
+    Ok(data)
+}
+
+fn encrypt_data_to_secret(
+    data: &HashMap<String, String>,
+    keypair: &SigningKey,
+) -> Result<Secret, Box<dyn std::error::Error>> {
+    let symmetric_key = SymmetricKey::from_ed25519(keypair);
+    let mut secret = Secret {
+        data: HashMap::new(),
+    };
+
+    for (k, v) in data {
+        secret
+            .data
+            .insert(k.clone(), encrypt(&symmetric_key, v.as_bytes())?);
+    }
+
+    Ok(secret)
+}
+
 pub async fn handle_init() -> Result<(), Box<dyn std::error::Error>> {
     println!("Initializing a new lockbox...");
     let config = Config::new()?;
@@ -110,41 +159,12 @@ pub async fn handle_set(
     name: String,
     pairs: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new()?;
-    let mut client_config = ClientConfig::load(&config)?;
+    let mut client_config = load_client_config()?;
 
-    // Parse KEY=VALUE pairs
-    let mut data = HashMap::new();
-    for pair in pairs {
-        let parts: Vec<&str> = pair.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            return Err(format!("Invalid format '{}'. Use KEY=VALUE", pair).into());
-        }
-        let key = parts[0].trim();
-        let value = parts[1].trim();
-
-        if key.is_empty() || value.is_empty() {
-            return Err(format!("Key or value cannot be empty in '{}'", pair).into());
-        }
-
-        data.insert(key.to_string(), value.to_string());
-    }
-
-    if data.is_empty() {
-        return Err("No key-value pairs provided".into());
-    }
+    let data = parse_key_value_pairs(pairs)?;
 
     // Encrypt the values client-side (E2EE!)
-    let symmetric_key = SymmetricKey::from_ed25519(&client_config.keypair);
-    let mut secret = Secret {
-        data: HashMap::new(),
-    };
-
-    for (k, v) in &data {
-        secret
-            .data
-            .insert(k.clone(), encrypt(&symmetric_key, v.as_bytes())?);
-    }
+    let secret = encrypt_data_to_secret(&data, &client_config.keypair)?;
 
     set(
         name,
@@ -157,8 +177,7 @@ pub async fn handle_set(
 }
 
 pub async fn handle_get(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new()?;
-    let mut client_config = ClientConfig::load(&config)?;
+    let mut client_config = load_client_config()?;
     let secret = get(name, &client_config.base_url, &mut client_config.keypair).await?;
     let symmetric_key = SymmetricKey::from_ed25519(&client_config.keypair);
     println!("Retrieved secret:");
@@ -170,8 +189,7 @@ pub async fn handle_get(name: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub async fn handle_list() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new()?;
-    let mut client_config = ClientConfig::load(&config)?;
+    let mut client_config = load_client_config()?;
     let secret_names = list(&client_config.base_url, &mut client_config.keypair).await?;
     println!("All Secrets:");
     for name in secret_names {
@@ -181,8 +199,7 @@ pub async fn handle_list() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub async fn handle_remove(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new()?;
-    let mut client_config = ClientConfig::load(&config)?;
+    let mut client_config = load_client_config()?;
     remove(name, &client_config.base_url, &mut client_config.keypair).await?;
     println!("✓ Secret '{}' removed successfully", name);
     Ok(())
@@ -192,41 +209,12 @@ pub async fn handle_update(
     name: &str,
     pairs: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new()?;
-    let mut client_config = ClientConfig::load(&config)?;
+    let mut client_config = load_client_config()?;
 
-    // Parse KEY=VALUE pairs
-    let mut data = HashMap::new();
-    for pair in pairs {
-        let parts: Vec<&str> = pair.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            return Err(format!("Invalid format '{}'. Use KEY=VALUE", pair).into());
-        }
-        let key = parts[0].trim();
-        let value = parts[1].trim();
-
-        if key.is_empty() || value.is_empty() {
-            return Err(format!("Key or value cannot be empty in '{}'", pair).into());
-        }
-
-        data.insert(key.to_string(), value.to_string());
-    }
-
-    if data.is_empty() {
-        return Err("No key-value pairs provided".into());
-    }
+    let data = parse_key_value_pairs(pairs)?;
 
     // Encrypt the values client-side (E2EE!)
-    let symmetric_key = SymmetricKey::from_ed25519(&client_config.keypair);
-    let mut secret = Secret {
-        data: HashMap::new(),
-    };
-
-    for (k, v) in &data {
-        secret
-            .data
-            .insert(k.clone(), encrypt(&symmetric_key, v.as_bytes())?);
-    }
+    let secret = encrypt_data_to_secret(&data, &client_config.keypair)?;
 
     update(
         name,

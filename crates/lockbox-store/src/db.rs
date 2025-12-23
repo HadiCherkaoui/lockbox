@@ -5,6 +5,13 @@ use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn current_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
 pub struct Database {
     pool: SqlitePool,
 }
@@ -23,10 +30,7 @@ impl Database {
     }
     pub async fn register_key(&self, public_key: &VerifyingKey, label: &str) -> Result<(), String> {
         let key_bytes = public_key.to_bytes().to_vec();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now = current_timestamp();
 
         sqlx::query("INSERT INTO users (public_key, label, created_at) VALUES (?, ?, ?)")
             .bind(&key_bytes)
@@ -64,10 +68,7 @@ impl Database {
         let data_json = serde_json::to_string(data)
             .map_err(|e| format!("Failed to serialize secret data: {}", e))?;
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now = current_timestamp();
         sqlx::query(
             "INSERT INTO secrets (name, data, created_at, updated_at)
              VALUES (?, ?, ?, ?)
@@ -137,10 +138,7 @@ impl Database {
         let data_json = serde_json::to_string(&existing_data)
             .map_err(|e| format!("Failed to serialize secret data: {}", e))?;
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now = current_timestamp();
 
         sqlx::query("UPDATE secrets SET data = ?, updated_at = ? WHERE name = ?")
             .bind(&data_json)

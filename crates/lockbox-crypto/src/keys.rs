@@ -9,7 +9,7 @@ pub fn generate_keypair() -> SigningKey {
 
 pub fn save_signing_key(key: &SigningKey, filepath: &str) -> Result<(), String> {
     let key_bytes = key.to_bytes();
-    write(filepath, &key_bytes)
+    write(filepath, key_bytes)
         .map_err(|e| format!("Failed to write signing key to file: {}", e))?;
     Ok(())
 }
