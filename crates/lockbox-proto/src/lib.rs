@@ -1,5 +1,5 @@
 use ed25519_dalek::{Signature, VerifyingKey};
-use lockbox_store::secrets::Secret;
+use lockbox_store::Secret;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

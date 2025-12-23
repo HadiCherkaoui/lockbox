@@ -4,7 +4,7 @@ use lockbox_proto::{
     ChallengeRequest, ChallengeResponse, GetSecretResponse, ListSecretsResponse,
     RegisterKeyRequest, SetSecretRequest,
 };
-use lockbox_store::secrets::Secret;
+use lockbox_store::Secret;
 use reqwest::Client;
 
 const USER_AGENT: &str = "lockbox-cli/1.0";

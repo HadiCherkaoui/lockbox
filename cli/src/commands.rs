@@ -5,7 +5,7 @@ use lockbox_crypto::{
     cipher::{SymmetricKey, encrypt},
     keys::{generate_keypair, save_signing_key},
 };
-use lockbox_store::secrets::Secret;
+use lockbox_store::Secret;
 use std::{
     collections::HashMap,
     fs::create_dir_all,
