@@ -5,11 +5,22 @@ use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn current_timestamp() -> i64 {
+fn current_timestamp() -> Result<i64, String> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
+        .map(|d| d.as_secs() as i64)
+        .map_err(|e| format!("Failed to get current time: {}", e))
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SecretRecord {
+    pub id: i64,
+    pub namespace: String,
+    pub name: String,
+    pub data: HashMap<String, Ciphertext>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub deleted_at: Option<i64>,
 }
 
 pub struct Database {
@@ -30,7 +41,7 @@ impl Database {
     }
     pub async fn register_key(&self, public_key: &VerifyingKey, label: &str) -> Result<(), String> {
         let key_bytes = public_key.to_bytes().to_vec();
-        let now = current_timestamp();
+        let now = current_timestamp()?;
 
         sqlx::query("INSERT INTO users (public_key, label, created_at) VALUES (?, ?, ?)")
             .bind(&key_bytes)
@@ -62,20 +73,24 @@ impl Database {
     }
     pub async fn set_secret(
         &self,
+        namespace: &str,
         name: &str,
         data: &HashMap<String, Ciphertext>,
     ) -> Result<(), String> {
         let data_json = serde_json::to_string(data)
             .map_err(|e| format!("Failed to serialize secret data: {}", e))?;
 
-        let now = current_timestamp();
+        let now = current_timestamp()?;
         sqlx::query(
-            "INSERT INTO secrets (name, data, created_at, updated_at)
-             VALUES (?, ?, ?, ?)
+            "INSERT INTO secrets (namespace, name, data, created_at, updated_at, deleted_at)
+             VALUES (?, ?, ?, ?, ?, NULL)
              ON CONFLICT(name) DO UPDATE SET
+                namespace = excluded.namespace,
                 data = excluded.data,
-                updated_at = excluded.updated_at",
+                updated_at = excluded.updated_at,
+                deleted_at = NULL",
         )
+        .bind(namespace)
         .bind(name)
         .bind(&data_json)
         .bind(now)
@@ -87,7 +102,7 @@ impl Database {
         Ok(())
     }
     pub async fn get_secret(&self, name: &str) -> Result<HashMap<String, Ciphertext>, String> {
-        let row = sqlx::query("SELECT data FROM secrets WHERE name = ?")
+        let row = sqlx::query("SELECT data FROM secrets WHERE name = ? AND deleted_at IS NULL")
             .bind(name)
             .fetch_optional(&self.pool)
             .await
@@ -103,28 +118,79 @@ impl Database {
             None => Err(format!("No secret found for name: {}", name)),
         }
     }
+
+    pub async fn get_secret_record(&self, name: &str) -> Result<SecretRecord, String> {
+        let row = sqlx::query(
+            "SELECT id, namespace, name, data, created_at, updated_at, deleted_at 
+             FROM secrets WHERE name = ? AND deleted_at IS NULL",
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to fetch secret: {}", e))?;
+
+        match row {
+            Some(row) => {
+                let data_json: String = row.get("data");
+                let data: HashMap<String, Ciphertext> = serde_json::from_str(&data_json)
+                    .map_err(|e| format!("Failed to deserialize secret data: {}", e))?;
+                Ok(SecretRecord {
+                    id: row.get("id"),
+                    namespace: row.get("namespace"),
+                    name: row.get("name"),
+                    data,
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    deleted_at: row.get("deleted_at"),
+                })
+            }
+            None => Err(format!("No secret found for name: {}", name)),
+        }
+    }
     pub async fn secret_exists(&self, name: &str) -> Result<bool, String> {
-        let result = sqlx::query("SELECT COUNT(*) as count FROM secrets WHERE name = ?")
-            .bind(name)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| format!("Failed to check secret: {}", e))?;
+        let result = sqlx::query(
+            "SELECT COUNT(*) as count FROM secrets WHERE name = ? AND deleted_at IS NULL",
+        )
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to check secret: {}", e))?;
 
         let count: i64 = result.get("count");
         Ok(count > 0)
     }
     pub async fn remove_secret(&self, name: &str) -> Result<(), String> {
-        let result = sqlx::query("DELETE FROM secrets WHERE name = ?")
-            .bind(name)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| format!("Failed to remove secret: {}", e))?;
+        let now = current_timestamp()?;
+        let result = sqlx::query(
+            "UPDATE secrets SET deleted_at = ?, updated_at = ? 
+             WHERE name = ? AND deleted_at IS NULL",
+        )
+        .bind(now)
+        .bind(now)
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to remove secret: {}", e))?;
 
         if result.rows_affected() == 0 {
             Err(format!("No secret found for name: {}", name))
         } else {
             Ok(())
         }
+    }
+
+    pub async fn purge_deleted_secrets(&self, retention_seconds: i64) -> Result<u64, String> {
+        let now = current_timestamp()?;
+        let cutoff = now - retention_seconds;
+
+        let result =
+            sqlx::query("DELETE FROM secrets WHERE deleted_at IS NOT NULL AND deleted_at <= ?")
+                .bind(cutoff)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("Failed to purge deleted secrets: {}", e))?;
+
+        Ok(result.rows_affected())
     }
     pub async fn update_secret(
         &self,
@@ -138,26 +204,114 @@ impl Database {
         let data_json = serde_json::to_string(&existing_data)
             .map_err(|e| format!("Failed to serialize secret data: {}", e))?;
 
-        let now = current_timestamp();
+        let now = current_timestamp()?;
 
-        sqlx::query("UPDATE secrets SET data = ?, updated_at = ? WHERE name = ?")
-            .bind(&data_json)
+        sqlx::query(
+            "UPDATE secrets SET data = ?, updated_at = ? WHERE name = ? AND deleted_at IS NULL",
+        )
+        .bind(&data_json)
+        .bind(now)
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to update secret: {}", e))?;
+
+        Ok(())
+    }
+
+    pub async fn update_secret_namespace(&self, name: &str, namespace: &str) -> Result<(), String> {
+        let now = current_timestamp()?;
+
+        let result = sqlx::query(
+            "UPDATE secrets SET namespace = ?, updated_at = ? WHERE name = ? AND deleted_at IS NULL"
+        )
+            .bind(namespace)
             .bind(now)
             .bind(name)
             .execute(&self.pool)
             .await
-            .map_err(|e| format!("Failed to update secret: {}", e))?;
+            .map_err(|e| format!("Failed to update secret namespace: {}", e))?;
 
-        Ok(())
+        if result.rows_affected() == 0 {
+            Err(format!("No secret found for name: {}", name))
+        } else {
+            Ok(())
+        }
     }
     pub async fn list_secrets(&self) -> Result<Vec<String>, String> {
-        let rows = sqlx::query("SELECT name FROM secrets ORDER BY name")
+        let rows = sqlx::query("SELECT name FROM secrets WHERE deleted_at IS NULL ORDER BY name")
             .fetch_all(&self.pool)
             .await
             .map_err(|e| format!("Failed to list secrets: {}", e))?;
 
         let names = rows.iter().map(|row| row.get("name")).collect();
         Ok(names)
+    }
+
+    pub async fn get_secrets_since(
+        &self,
+        since: i64,
+        limit: Option<i64>,
+    ) -> Result<Vec<SecretRecord>, String> {
+        let limit_val = limit.unwrap_or(1000);
+        let rows = sqlx::query(
+            "SELECT id, namespace, name, data, created_at, updated_at, deleted_at 
+             FROM secrets 
+             WHERE updated_at > ? 
+             ORDER BY updated_at ASC 
+             LIMIT ?",
+        )
+        .bind(since)
+        .bind(limit_val)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to fetch secrets since timestamp: {}", e))?;
+
+        let mut records = Vec::with_capacity(rows.len());
+        for row in rows {
+            let data_json: String = row.get("data");
+            let data: HashMap<String, Ciphertext> = serde_json::from_str(&data_json)
+                .map_err(|e| format!("Failed to deserialize secret data: {}", e))?;
+            records.push(SecretRecord {
+                id: row.get("id"),
+                namespace: row.get("namespace"),
+                name: row.get("name"),
+                data,
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                deleted_at: row.get("deleted_at"),
+            });
+        }
+        Ok(records)
+    }
+
+    pub async fn get_all_secret_records(&self) -> Result<Vec<SecretRecord>, String> {
+        let rows = sqlx::query(
+            "SELECT id, namespace, name, data, created_at, updated_at, deleted_at 
+             FROM secrets 
+             WHERE deleted_at IS NULL
+             ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to fetch all secrets: {}", e))?;
+
+        let mut records = Vec::with_capacity(rows.len());
+        for row in rows {
+            let data_json: String = row.get("data");
+            let data: HashMap<String, Ciphertext> = serde_json::from_str(&data_json)
+                .map_err(|e| format!("Failed to deserialize secret data: {}", e))?;
+            records.push(SecretRecord {
+                id: row.get("id"),
+                namespace: row.get("namespace"),
+                name: row.get("name"),
+                data,
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                deleted_at: row.get("deleted_at"),
+            });
+        }
+        Ok(records)
     }
     pub async fn store_challenge(
         &self,
@@ -251,7 +405,7 @@ mod tests {
             "password".to_string(),
             encrypt(&key, b"secretpasswd").unwrap(),
         );
-        db.set_secret("email", &data).await.unwrap();
+        db.set_secret("default", "email", &data).await.unwrap();
         let retrieved = db.get_secret("email").await.unwrap();
         assert_eq!(retrieved.len(), 2);
         assert!(retrieved.contains_key("username"));

@@ -1,93 +1,155 @@
-# lockbox
+# Lockbox
+
 [![Quality Gate Status](https://sonarqube.cherkaoui.ch/api/project_badges/measure?project=HadiCherkaoui_lockbox_2707f8bc-c376-4a15-b07c-09f191044f3f&metric=alert_status&token=sqb_c0d7fae7bdc947705724191a683333e0700031a3)](https://sonarqube.cherkaoui.ch/dashboard?id=HadiCherkaoui_lockbox_2707f8bc-c376-4a15-b07c-09f191044f3f)
 
+Dev and automation-friendly Password manager with E2EE written in Rust
 
-## Getting started
+## Overview
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Lockbox is a developer and automation-friendly password manager with end-to-end encryption (E2EE). It uses Ed25519 keypair-based authentication similar to SSH and WireGuard, eliminating the need for traditional passwords. The project is implemented in Rust, uses AGPLv3 license, and requires Rust 2024 edition.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Features
 
-## Add your files
+- **End-to-End Encryption**: All passwords are encrypted with AES-256-GCM encryption
+- **Keypair Authentication**: Uses Ed25519 keypairs for passwordless authentication (SSH/WireGuard-style)
+- **Developer Friendly**: Designed for automation and scripting
+- **Secure Memory Handling**: Automatic zeroization of sensitive key material
+- **Cross-platform**: Built with Rust for maximum portability
+- **CLI Interface**: Command-line client for easy automation
+- **Kubernetes-ready**: Namespaced secrets, soft deletions (tombstones), and delta-sync API for controllers
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Architecture
 
-```
-cd existing_repo
-git remote add origin https://gitlab.cherkaoui.ch/HadiCherkaoui/lockbox.git
-git branch -M main
-git push -uf origin main
-```
+The workspace follows a layered architecture with separate crates for different concerns:
 
-## Integrate with your tools
+**Core Library Crates** (`crates/`):
+- `lockbox-crypto`: Cryptographic primitives (AES-256-GCM for password encryption, Ed25519 keypairs for authentication)
+- `lockbox-proto`: Protocol definitions for client-server communication
+- `lockbox-auth`: Keypair-based authentication logic, SSH/WireGuard-style
+- `lockbox-store`: Encrypted storage backend for passwords and secrets
 
-- [ ] [Set up project integrations](https://gitlab.cherkaoui.ch/HadiCherkaoui/lockbox/-/settings/integrations)
+**Binary Crates**:
+- `server/`: Server application for centralized password storage with E2EE
+- `cli/`: Command-line client "lbx" for automation-friendly password management
 
-## Collaborate with your team
+## Cryptographic Implementation
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+The `lockbox-crypto` crate provides:
+- **Symmetric encryption**: AES-256-GCM for encrypting stored passwords via `SymmetricKey` type with automatic key zeroization
+- **Authentication keypairs**: Ed25519 keypair generation via `keys::generate_keypair()` for passwordless authentication
+- **Encryption format**: `Ciphertext` struct containing 12-byte nonce and ciphertext body with integrated GCM tag
 
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Dependencies:
+- `aes-gcm` for symmetric encryption of stored passwords
+- `ed25519-dalek` for SSH/WireGuard-style keypair authentication
+- `zeroize` for secure memory clearing of sensitive material
+- `rand` for cryptographically secure random number generation
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+### Prerequisites
+- Rust 2024 edition
+- Cargo package manager
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://gitlab.cherkaoui.ch/HadiCherkaoui/lockbox.git
+cd lockbox
+
+# Build all workspace members
+cargo build
+
+# Build release version
+cargo build --release
+```
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Running the Server
+```bash
+# Run the server application
+cargo run -p server
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Using the CLI Client
+```bash
+# Run the command-line client
+cargo run -p lbx
+```
+
+The `set` command accepts an optional namespace flag (defaults to `default`):
+
+```bash
+cargo run -p lbx -- set -n prod db-creds USERNAME=admin PASSWORD=s3cr3t
+```
+
+Secret names are unique per namespace and persisted server-side with server-controlled `created_at`, `updated_at`, and `deleted_at` timestamps (tombstones).
+
+### API Documentation
+For detailed API documentation, see [docs/api.md](docs/api.md). The API includes a `GET /secrets/sync?since=<timestamp>` endpoint for delta synchronization across namespaces.
+
+## Development
+
+### Building Specific Components
+```bash
+# Build specific crate
+cargo build -p lockbox-crypto
+cargo build -p server
+cargo build -p lbx
+
+# Release build
+cargo build --release
+```
+
+### Testing
+```bash
+# Run all tests in workspace
+cargo test
+
+# Run tests for specific crate
+cargo test -p lockbox-crypto
+cargo test -p lockbox-auth
+
+# Run specific test
+cargo test --lib it_works
+```
+
+### Code Quality
+```bash
+# Check without building
+cargo check
+
+# Run clippy linter
+cargo clippy
+
+# Format code
+cargo fmt
+
+# Check formatting
+cargo fmt --check
+```
+
+## Security
+
+Lockbox implements security-first design principles:
+- Zeroization of sensitive key material to prevent secrets from remaining in memory
+- Keypair-based authentication eliminates password transmission over the network
+- AES-256-GCM encryption for all stored passwords
+- Ed25519 signatures for authentication
 
 ## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### Current Development State
+Namespace-aware storage, tombstone deletions, and delta-sync APIs are implemented alongside the cryptographic primitives. Remaining work focuses on the Kubernetes controller integration.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This project is licensed under the AGPLv3 License - see the LICENSE file for details.
+
+## Project Status
+
+Active development. The project is currently in early stages with core cryptographic functionality implemented and server/client applications under development.

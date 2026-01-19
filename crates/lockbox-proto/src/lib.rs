@@ -1,9 +1,10 @@
 use ed25519_dalek::{Signature, VerifyingKey};
-use lockbox_store::Secret;
+use lockbox_store::{Secret, SecretWithMetadata};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct SetSecretRequest {
+    pub namespace: String,
     pub name: String,
     pub secret: Secret,
 }
@@ -67,4 +68,21 @@ pub struct ChallengeResponse {
 pub struct Claims {
     pub pub_key: VerifyingKey,
     pub exp: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DeltaSyncQuery {
+    pub since: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DeltaSyncResponse {
+    pub secrets: Vec<SecretWithMetadata>,
+    pub server_time: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetSecretWithMetadataResponse {
+    pub secret: SecretWithMetadata,
 }

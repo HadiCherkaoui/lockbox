@@ -1,10 +1,10 @@
 use axum::{
     Json, Router,
-    extract::{Request, State},
+    extract::{Query, Request, State},
     http::{HeaderMap, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -43,6 +43,8 @@ const CHALLENGE_EXPIRY_SECS: u64 = 300;
 const JWT_EXPIRY_SECS: usize = 60;
 const CHALLENGE_CLEANUP_INTERVAL_SECS: u64 = 60;
 const MAX_SECRET_NAME_LENGTH: usize = 256;
+const TOMBSTONE_RETENTION_SECS: i64 = 86400;
+const TOMBSTONE_PURGE_INTERVAL_SECS: u64 = 3600;
 
 fn current_timestamp() -> Result<i64, String> {
     SystemTime::now()
@@ -91,6 +93,25 @@ async fn main() {
         }
     });
 
+    let purge_db = state.db.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(TOMBSTONE_PURGE_INTERVAL_SECS)).await;
+            match purge_db
+                .purge_deleted_secrets(TOMBSTONE_RETENTION_SECS)
+                .await
+            {
+                Ok(removed) if removed > 0 => {
+                    println!("Purged {} tombstoned secrets", removed);
+                }
+                Err(e) => {
+                    eprintln!("Failed to purge tombstoned secrets: {}", e);
+                }
+                _ => {}
+            }
+        }
+    });
+
     let public_routes = Router::new()
         .route("/auth/register", post(register))
         .route("/auth/challenge", post(challenge))
@@ -98,11 +119,12 @@ async fn main() {
         .route("/health", get(health));
 
     let protected_routes = Router::new()
-        .route("/secrets", post(set_secret))
-        .route("/secrets", get(list_secrets))
-        .route("/secrets/{*name}", get(get_secret))
-        .route("/secrets/{*name}", delete(delete_secret))
-        .route("/secrets/{*name}", patch(update_secret))
+        .route("/secrets", post(set_secret).get(list_secrets))
+        .route("/secrets/sync", get(delta_sync))
+        .route(
+            "/secrets/{*name}",
+            get(get_secret).delete(delete_secret).patch(update_secret),
+        )
         .layer(middleware::from_fn(auth_middleware));
 
     let app = Router::new()
@@ -394,9 +416,17 @@ async fn set_secret(
             .into_response();
     }
 
+    if payload.namespace.is_empty() || payload.namespace.len() > MAX_SECRET_NAME_LENGTH {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Namespace must be between 1 and 256 characters"})),
+        )
+            .into_response();
+    }
+
     if let Err(e) = state
         .db
-        .set_secret(&payload.name, &payload.secret.data)
+        .set_secret(&payload.namespace, &payload.name, &payload.secret.data)
         .await
     {
         eprintln!("Failed to set secret: {}", e);
@@ -486,4 +516,61 @@ async fn update_secret(
     }
 
     (StatusCode::OK, Json(SetSecretResponse { success: true })).into_response()
+}
+
+async fn delta_sync(
+    State(state): State<AppState>,
+    Query(params): Query<DeltaSyncQuery>,
+) -> impl IntoResponse {
+    let server_time = match current_timestamp() {
+        Ok(ts) => ts,
+        Err(e) => {
+            eprintln!("{}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Failed to get server time"})),
+            )
+                .into_response();
+        }
+    };
+
+    let secrets = match params.since {
+        Some(since) => match state.db.get_secrets_since(since, params.limit).await {
+            Ok(records) => records
+                .into_iter()
+                .map(lockbox_store::SecretWithMetadata::from)
+                .collect(),
+            Err(e) => {
+                eprintln!("Failed to get secrets since timestamp: {}", e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Failed to fetch secrets"})),
+                )
+                    .into_response();
+            }
+        },
+        None => match state.db.get_all_secret_records().await {
+            Ok(records) => records
+                .into_iter()
+                .map(lockbox_store::SecretWithMetadata::from)
+                .collect(),
+            Err(e) => {
+                eprintln!("Failed to get all secrets: {}", e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Failed to fetch secrets"})),
+                )
+                    .into_response();
+            }
+        },
+    };
+
+    (
+        StatusCode::OK,
+        Json(DeltaSyncResponse {
+            secrets,
+            server_time,
+        }),
+    )
+        .into_response()
 }

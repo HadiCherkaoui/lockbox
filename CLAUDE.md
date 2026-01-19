@@ -96,6 +96,6 @@ cargo fmt --check
 
 3. **Workspace Dependencies**: Server and CLI binaries depend on all four core library crates. Changes to library APIs will affect both binaries.
 
-4. **Current Development State**: Most crates contain placeholder `add()` functions and basic tests. The primary implemented functionality is in `lockbox-crypto`.
+4. **Current Development State**: Namespace-aware secret storage, tombstone deletions (via `deleted_at`), and delta sync APIs (`GET /secrets/sync?since=`) are implemented alongside the core cryptography. Controllers rely on server-controlled timestamps and namespaces for reconciliation.
 
 5. **No Public Publishing**: All workspace crates have `publish = false` in their Cargo.toml.

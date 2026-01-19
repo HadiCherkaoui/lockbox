@@ -44,6 +44,7 @@ pub async fn register_server(
 }
 
 pub async fn set(
+    namespace: String,
     name: String,
     secret: Secret,
     base_url: &str,
@@ -51,7 +52,11 @@ pub async fn set(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let token = authenticate(base_url, keypair).await?;
     let client = build_http_client()?;
-    let request_payload = SetSecretRequest { name, secret };
+    let request_payload = SetSecretRequest {
+        namespace,
+        name,
+        secret,
+    };
     let res = client
         .post(format!("{}/secrets", base_url))
         .header("Authorization", format!("Bearer {}", token))

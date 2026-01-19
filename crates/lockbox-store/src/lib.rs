@@ -3,9 +3,34 @@ use std::collections::HashMap;
 
 pub mod db;
 
+pub use db::SecretRecord;
+
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Secret {
     pub data: HashMap<String, Ciphertext>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct SecretWithMetadata {
+    pub namespace: String,
+    pub name: String,
+    pub data: HashMap<String, Ciphertext>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub deleted_at: Option<i64>,
+}
+
+impl From<SecretRecord> for SecretWithMetadata {
+    fn from(record: SecretRecord) -> Self {
+        Self {
+            namespace: record.namespace,
+            name: record.name,
+            data: record.data,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+            deleted_at: record.deleted_at,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -33,7 +58,7 @@ mod tests {
         );
 
         // Store encrypted secret (server operation)
-        db.set_secret("email", &data)
+        db.set_secret("default", "email", &data)
             .await
             .expect("should set secret");
 
@@ -83,13 +108,13 @@ mod tests {
             encrypt(&key, b"dbpass").expect("should encrypt"),
         );
 
-        db.set_secret("prod/database-config", &data)
+        db.set_secret("prod", "database-config", &data)
             .await
             .expect("should set multi-key secret");
 
         // Retrieve encrypted secret
         let retrieved = db
-            .get_secret("prod/database-config")
+            .get_secret("database-config")
             .await
             .expect("should get secret");
 
@@ -130,7 +155,7 @@ mod tests {
             "password".to_string(),
             encrypt(&key, b"pass1").expect("should encrypt"),
         );
-        db.set_secret("test", &data)
+        db.set_secret("default", "test", &data)
             .await
             .expect("should set secret");
 
@@ -167,7 +192,7 @@ mod tests {
             "username".to_string(),
             encrypt(&key, b"test").expect("should encrypt"),
         );
-        db.set_secret("test", &data)
+        db.set_secret("default", "test", &data)
             .await
             .expect("should set secret");
 

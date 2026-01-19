@@ -14,6 +14,8 @@ struct Cli {
 enum Commands {
     Init,
     Set {
+        #[arg(short, long, default_value = "default")]
+        namespace: String,
         name: String,
         #[arg(required = true)]
         pairs: Vec<String>,
@@ -40,8 +42,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Init => {
             handle_init().await?;
         }
-        Commands::Set { name, pairs } => {
-            handle_set(name, pairs).await?;
+        Commands::Set {
+            namespace,
+            name,
+            pairs,
+        } => {
+            handle_set(namespace, name, pairs).await?;
         }
         Commands::Get { name } => {
             handle_get(&name).await?;

@@ -11,3 +11,12 @@ resolver = "3"
 
 [workspace.package]
 edition = "2024"
+
+[profile.release]
+strip = "symbols"
+debug = false
+debug-assertions = false
+overflow-checks = false
+panic = "abort"
+lto = "thin"
+codegen-units = 1

@@ -156,6 +156,7 @@ pub async fn handle_init() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub async fn handle_set(
+    namespace: String,
     name: String,
     pairs: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -167,6 +168,7 @@ pub async fn handle_set(
     let secret = encrypt_data_to_secret(&data, &client_config.keypair)?;
 
     set(
+        namespace,
         name,
         secret,
         &client_config.base_url,
