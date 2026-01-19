@@ -5,6 +5,7 @@ image:
 variables:
   SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
   GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+  DOCKER_TAG: "latest"
 
 stages:
   - verify
@@ -48,18 +49,20 @@ docker-build:
   stage: release
   image: docker:29
   services:
-    - docker:29-dind
+    - name: docker:28.0.4-dind
+      alias: docker
+      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock", "--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   needs:
     - job: tests
     - job: sonar
       optional: true
   <<: *default_rules
+  before_script:
+    - docker info
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - docker build -t "$CI_REGISTRY_IMAGE:${CI_COMMIT_SHA}" -f Dockerfile .
-    - docker push "$CI_REGISTRY_IMAGE:${CI_COMMIT_SHA}"
-    - |
-      if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        docker tag "$CI_REGISTRY_IMAGE:${CI_COMMIT_SHA}" "$CI_REGISTRY_IMAGE:latest"
-        docker push "$CI_REGISTRY_IMAGE:latest"
-      fi
+    - docker build -t "$CI_REGISTRY_IMAGE:$DOCKER_TAG" -f Dockerfile .
+    - docker push "$CI_REGISTRY_IMAGE:$DOCKER_TAG"
