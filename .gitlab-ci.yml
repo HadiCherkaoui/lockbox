@@ -47,9 +47,9 @@ sonar:
 
 docker-build:
   stage: release
-  image: docker:29
+  image: docker:28
   services:
-    - name: docker:28.0.4-dind
+    - name: docker:28-dind
       alias: docker
       command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock", "--tls=false"]
   variables:
