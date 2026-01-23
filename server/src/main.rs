@@ -6,7 +6,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use base64::{Engine, engine::general_purpose};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use lockbox_proto::*;
 use lockbox_store::db::Database;
@@ -234,7 +233,6 @@ async fn challenge(
     }
     let mut nonce = [0u8; 32];
     rand::rng().fill_bytes(&mut nonce);
-    let challenge_b64 = general_purpose::STANDARD.encode(nonce);
 
     let expires_at = match current_timestamp() {
         Ok(ts) => ts + CHALLENGE_EXPIRY_SECS as i64,
@@ -248,10 +246,9 @@ async fn challenge(
         }
     };
 
-    let pub_key_b64 = general_purpose::STANDARD.encode(payload.public_key.as_bytes());
     if let Err(e) = state
         .db
-        .store_challenge(&pub_key_b64, &challenge_b64, expires_at)
+        .store_challenge(payload.public_key.as_bytes(), &nonce, expires_at)
         .await
     {
         eprintln!("Failed to store challenge: {}", e);
@@ -265,7 +262,7 @@ async fn challenge(
     (
         StatusCode::OK,
         Json(ChallengeResponse {
-            challenge: challenge_b64,
+            challenge: nonce.to_vec(),
         }),
     )
         .into_response()
@@ -275,8 +272,7 @@ async fn verify(
     State(state): State<AppState>,
     Json(payload): Json<AuthRequest>,
 ) -> impl IntoResponse {
-    let pub_key_b64 = general_purpose::STANDARD.encode(payload.public_key.as_bytes());
-    let (stored_challenge, expires_at) = match state.db.consume_challenge(&pub_key_b64).await {
+    let (stored_challenge, expires_at) = match state.db.consume_challenge(payload.public_key.as_bytes()).await {
         Ok(Some(data)) => data,
         Ok(None) => {
             return (
@@ -320,20 +316,9 @@ async fn verify(
         )
             .into_response();
     }
-    let challenge_bytes = match general_purpose::STANDARD.decode(&payload.challenge) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            eprintln!("Failed to decode challenge: {}", e);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "Invalid challenge encoding"})),
-            )
-                .into_response();
-        }
-    };
     if let Err(e) = payload
         .public_key
-        .verify_strict(&challenge_bytes, &payload.signature)
+        .verify_strict(&payload.challenge, &payload.signature)
     {
         return (
             StatusCode::UNAUTHORIZED,

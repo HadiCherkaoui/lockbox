@@ -25,9 +25,9 @@ CREATE INDEX IF NOT EXISTS idx_secrets_namespace ON secrets(namespace);
 
 -- Challenges table stores authentication challenges
 CREATE TABLE IF NOT EXISTS challenges (
-    public_key_b64 TEXT PRIMARY KEY NOT NULL, -- Base64-encoded public key
-    challenge TEXT NOT NULL,                   -- Base64-encoded challenge nonce
-    expires_at INTEGER NOT NULL                -- Unix timestamp when challenge expires
+    public_key BLOB PRIMARY KEY NOT NULL,  -- Raw public key bytes (32 bytes)
+    challenge BLOB NOT NULL,               -- Raw challenge nonce (32 bytes)
+    expires_at INTEGER NOT NULL            -- Unix timestamp when challenge expires
 );
 
 -- Index for challenge expiry cleanup

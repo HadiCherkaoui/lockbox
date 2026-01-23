@@ -44,7 +44,7 @@ pub struct RegisterKeyResponse {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AuthRequest {
     pub public_key: VerifyingKey,
-    pub challenge: String,
+    pub challenge: Vec<u8>,
     pub signature: Signature,
 }
 
@@ -61,7 +61,7 @@ pub struct ChallengeRequest {
 
 #[derive(serde::Serialize, Deserialize)]
 pub struct ChallengeResponse {
-    pub challenge: String,
+    pub challenge: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

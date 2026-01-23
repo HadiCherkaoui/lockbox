@@ -295,17 +295,17 @@ impl Database {
     }
     pub async fn store_challenge(
         &self,
-        public_key_b64: &str,
-        challenge: &str,
+        public_key: &[u8],
+        challenge: &[u8],
         expires_at: i64,
     ) -> Result<(), String> {
         sqlx::query(
-            "INSERT INTO challenges (public_key_b64, challenge, expires_at) VALUES (?, ?, ?)
-             ON CONFLICT(public_key_b64) DO UPDATE SET
+            "INSERT INTO challenges (public_key, challenge, expires_at) VALUES (?, ?, ?)
+             ON CONFLICT(public_key) DO UPDATE SET
                 challenge = excluded.challenge,
                 expires_at = excluded.expires_at",
         )
-        .bind(public_key_b64)
+        .bind(public_key)
         .bind(challenge)
         .bind(expires_at)
         .execute(&self.pool)
@@ -316,20 +316,20 @@ impl Database {
     }
     pub async fn consume_challenge(
         &self,
-        public_key_b64: &str,
-    ) -> Result<Option<(String, i64)>, String> {
+        public_key: &[u8],
+    ) -> Result<Option<(Vec<u8>, i64)>, String> {
         let row =
-            sqlx::query("SELECT challenge, expires_at FROM challenges WHERE public_key_b64 = ?")
-                .bind(public_key_b64)
+            sqlx::query("SELECT challenge, expires_at FROM challenges WHERE public_key = ?")
+                .bind(public_key)
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| format!("Failed to fetch challenge: {}", e))?;
 
         if let Some(row) = row {
-            let challenge: String = row.get("challenge");
+            let challenge: Vec<u8> = row.get("challenge");
             let expires_at: i64 = row.get("expires_at");
-            sqlx::query("DELETE FROM challenges WHERE public_key_b64 = ?")
-                .bind(public_key_b64)
+            sqlx::query("DELETE FROM challenges WHERE public_key = ?")
+                .bind(public_key)
                 .execute(&self.pool)
                 .await
                 .map_err(|e| format!("Failed to delete challenge: {}", e))?;

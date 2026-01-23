@@ -26,7 +26,7 @@ Register a new public key with an associated label.
 **Request Body:**
 ```json
 {
-  "public_key": "base64_encoded_public_key",
+  "public_key": [byte_array_as_numbers],
   "label": "string_label_for_the_key"
 }
 ```
@@ -47,14 +47,14 @@ Request a challenge for authentication.
 **Request Body:**
 ```json
 {
-  "public_key": "base64_encoded_public_key"
+  "public_key": [byte_array_as_numbers]
 }
 ```
 
 **Response:**
 ```json
 {
-  "challenge": "base64_encoded_challenge_string"
+  "challenge": [byte_array_as_numbers]
 }
 ```
 
@@ -67,9 +67,9 @@ Verify the signed challenge to obtain a JWT token.
 **Request Body:**
 ```json
 {
-  "public_key": "base64_encoded_public_key",
-  "challenge": "base64_encoded_challenge_string",
-  "signature": "base64_encoded_signature_of_challenge"
+  "public_key": [byte_array_as_numbers],
+  "challenge": [byte_array_as_numbers],
+  "signature": [byte_array_as_numbers]
 }
 ```
 

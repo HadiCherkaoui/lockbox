@@ -1,4 +1,3 @@
-use base64::{Engine, engine::general_purpose};
 use ed25519_dalek::{SigningKey, ed25519::signature::SignerMut};
 use lockbox_proto::{
     ChallengeRequest, ChallengeResponse, GetSecretResponse, ListSecretsResponse,
@@ -173,12 +172,7 @@ async fn authenticate(
     }
     let challenge: ChallengeResponse = challenge_req.json().await?;
 
-    // Decode the base64 challenge before signing
-    let challenge_bytes = general_purpose::STANDARD
-        .decode(&challenge.challenge)
-        .map_err(|e| format!("Failed to decode challenge: {}", e))?;
-
-    let signature = keypair.try_sign(&challenge_bytes)?;
+    let signature = keypair.try_sign(&challenge.challenge)?;
     let auth_payload = lockbox_proto::AuthRequest {
         public_key: keypair.verifying_key(),
         challenge: challenge.challenge,
