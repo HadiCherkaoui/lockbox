@@ -141,15 +141,15 @@ Lockbox implements security-first design principles:
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change. For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Current Development State
 Namespace-aware storage, tombstone deletions, and delta-sync APIs are implemented alongside the cryptographic primitives. Remaining work focuses on the Kubernetes controller integration.
 
 ## License
 
-This project is licensed under the AGPLv3 License - see the LICENSE file for details.
+This project is licensed under the AGPLv3 License - For more information, see [LICENSE](LICENSE).
 
 ## Project Status
 
-Active development. The project is currently in early stages with core cryptographic functionality implemented and server/client applications under development.
+Active development. This is a personal side project I started to learn Rust, now actively used in my homelab infrastructure. The Kubernetes deployment is managed via FluxCD at [gitlab.cherkaoui.ch/HadiCherkaoui/homelab-k8s-fluxcd](https://gitlab.cherkaoui.ch/HadiCherkaoui/homelab-k8s-fluxcd).
