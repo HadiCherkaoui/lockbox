@@ -18,11 +18,20 @@ COPY . .
 RUN cargo build --release --locked -p server --target x86_64-unknown-linux-musl \
     && install -Dm755 target/x86_64-unknown-linux-musl/release/server /runtime/lockbox-server
 
+# Create non-root user files for scratch
+RUN echo "lockbox:x:10001:10001::/data:/sbin/nologin" > /runtime/passwd \
+    && echo "lockbox:x:10001:" > /runtime/group \
+    && mkdir -p /runtime/data && chown 10001:10001 /runtime/data
+
 FROM scratch AS runtime
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /runtime/passwd /etc/passwd
+COPY --from=builder /runtime/group /etc/group
 COPY --from=builder /runtime/lockbox-server /usr/local/bin/lockbox-server
+COPY --from=builder --chown=10001:10001 /runtime/data /data
 
+USER 10001:10001
 WORKDIR /data
 ENV RUST_LOG=info
 VOLUME ["/data"]

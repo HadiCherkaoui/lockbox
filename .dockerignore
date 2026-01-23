@@ -1,6 +1,9 @@
-target/
-.git/
-.gitignore
-**/*.rs.bk
-Dockerfile
-.dockerignore
+# Ignore everything
+*
+
+# Allow only what's needed for the build
+!Cargo.toml
+!Cargo.lock
+!cli/
+!server/
+!crates/

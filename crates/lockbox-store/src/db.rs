@@ -27,6 +27,21 @@ pub struct Database {
     pool: SqlitePool,
 }
 
+fn parse_secret_record(row: &sqlx::sqlite::SqliteRow) -> Result<SecretRecord, String> {
+    let data_json: String = row.get("data");
+    let data: HashMap<String, Ciphertext> = serde_json::from_str(&data_json)
+        .map_err(|e| format!("Failed to deserialize secret data: {}", e))?;
+    Ok(SecretRecord {
+        id: row.get("id"),
+        namespace: row.get("namespace"),
+        name: row.get("name"),
+        data,
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        deleted_at: row.get("deleted_at"),
+    })
+}
+
 impl Database {
     pub async fn new(database_url: &str) -> Result<Self, sqlx::Error> {
         let pool = SqlitePool::connect(database_url).await?;
@@ -130,20 +145,7 @@ impl Database {
         .map_err(|e| format!("Failed to fetch secret: {}", e))?;
 
         match row {
-            Some(row) => {
-                let data_json: String = row.get("data");
-                let data: HashMap<String, Ciphertext> = serde_json::from_str(&data_json)
-                    .map_err(|e| format!("Failed to deserialize secret data: {}", e))?;
-                Ok(SecretRecord {
-                    id: row.get("id"),
-                    namespace: row.get("namespace"),
-                    name: row.get("name"),
-                    data,
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
-                    deleted_at: row.get("deleted_at"),
-                })
-            }
+            Some(row) => parse_secret_record(&row),
             None => Err(format!("No secret found for name: {}", name)),
         }
     }
@@ -269,18 +271,7 @@ impl Database {
 
         let mut records = Vec::with_capacity(rows.len());
         for row in rows {
-            let data_json: String = row.get("data");
-            let data: HashMap<String, Ciphertext> = serde_json::from_str(&data_json)
-                .map_err(|e| format!("Failed to deserialize secret data: {}", e))?;
-            records.push(SecretRecord {
-                id: row.get("id"),
-                namespace: row.get("namespace"),
-                name: row.get("name"),
-                data,
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                deleted_at: row.get("deleted_at"),
-            });
+            records.push(parse_secret_record(&row)?);
         }
         Ok(records)
     }
@@ -298,18 +289,7 @@ impl Database {
 
         let mut records = Vec::with_capacity(rows.len());
         for row in rows {
-            let data_json: String = row.get("data");
-            let data: HashMap<String, Ciphertext> = serde_json::from_str(&data_json)
-                .map_err(|e| format!("Failed to deserialize secret data: {}", e))?;
-            records.push(SecretRecord {
-                id: row.get("id"),
-                namespace: row.get("namespace"),
-                name: row.get("name"),
-                data,
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                deleted_at: row.get("deleted_at"),
-            });
+            records.push(parse_secret_record(&row)?);
         }
         Ok(records)
     }
