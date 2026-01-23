@@ -318,12 +318,11 @@ impl Database {
         &self,
         public_key: &[u8],
     ) -> Result<Option<(Vec<u8>, i64)>, String> {
-        let row =
-            sqlx::query("SELECT challenge, expires_at FROM challenges WHERE public_key = ?")
-                .bind(public_key)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| format!("Failed to fetch challenge: {}", e))?;
+        let row = sqlx::query("SELECT challenge, expires_at FROM challenges WHERE public_key = ?")
+            .bind(public_key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to fetch challenge: {}", e))?;
 
         if let Some(row) = row {
             let challenge: Vec<u8> = row.get("challenge");

@@ -272,7 +272,11 @@ async fn verify(
     State(state): State<AppState>,
     Json(payload): Json<AuthRequest>,
 ) -> impl IntoResponse {
-    let (stored_challenge, expires_at) = match state.db.consume_challenge(payload.public_key.as_bytes()).await {
+    let (stored_challenge, expires_at) = match state
+        .db
+        .consume_challenge(payload.public_key.as_bytes())
+        .await
+    {
         Ok(Some(data)) => data,
         Ok(None) => {
             return (
