@@ -1,6 +1,6 @@
 # Lockbox
 
-[![Quality Gate Status](https://sonarqube.cherkaoui.ch/api/project_badges/measure?project=HadiCherkaoui_lockbox_6375be0c-a5c2-4b74-a62e-33e57ce977b3&metric=alert_status&token=sqb_c0d7fae7bdc947705724191a683333e0700031a3)](https://sonarqube.cherkaoui.ch/dashboard?id=HadiCherkaoui_lockbox_6375be0c-a5c2-4b74-a62e-33e57ce977b3)
+[![Quality Gate Status](https://sonarqube.cherkaoui.ch/api/project_badges/measure?project=HadiCherkaoui_lockbox_6375be0c-a5c2-4b74-a62e-33e57ce977b3&metric=alert_status&token=sqb_b2cbf9b77a1099fca6763b5116f7e07bdd14e876)](https://sonarqube.cherkaoui.ch/dashboard?id=HadiCherkaoui_lockbox_6375be0c-a5c2-4b74-a62e-33e57ce977b3)
 
 Dev and automation-friendly Password manager with E2EE written in Rust
 
