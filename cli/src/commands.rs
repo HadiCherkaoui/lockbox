@@ -1,15 +1,15 @@
 use crate::helpers::{get, list, register_server, remove, set, update};
-use dirs::home_dir;
+use dirs::data_dir;
 use ed25519_dalek::SigningKey;
 use lockbox_crypto::{
-    cipher::{SymmetricKey, encrypt},
+    cipher::{encrypt, SymmetricKey},
     keys::{generate_keypair, save_signing_key},
 };
 use lockbox_store::Secret;
 use std::{
     collections::HashMap,
     fs::create_dir_all,
-    io::{Write, stdin, stdout},
+    io::{stdin, stdout, Write},
     path::{Path, PathBuf},
 };
 
@@ -21,9 +21,9 @@ struct Config {
 
 impl Config {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let lockbox_path = home_dir()
-            .ok_or("Could not find home directory")?
-            .join(".lockbox");
+        let lockbox_path = data_dir()
+            .ok_or("Could not find XDG data directory")?
+            .join("lockbox");
 
         let keypair_path = lockbox_path.join("keypair.bin");
         let base_url_path = lockbox_path.join("serverbase.txt");
